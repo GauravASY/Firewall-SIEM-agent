@@ -10,4 +10,5 @@ dependencies = [
     "google-adk>=1.19.0",
     "gradio>=5.50.0",
     "requests>=2.32.5",
+    "urllib3>=2.5.0",
 ]

@@ -196,6 +196,7 @@ dependencies = [
     { name = "google-adk" },
     { name = "gradio" },
     { name = "requests" },
+    { name = "urllib3" },
 ]
 
 [package.metadata]
@@ -205,6 +206,7 @@ requires-dist = [
     { name = "google-adk", specifier = ">=1.19.0" },
     { name = "gradio", specifier = ">=5.50.0" },
     { name = "requests", specifier = ">=2.32.5" },
+    { name = "urllib3", specifier = ">=2.5.0" },
 ]
 
 [[package]]
