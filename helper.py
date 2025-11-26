@@ -12,12 +12,13 @@ def checkEnvVariable(var_name):
 def analyzeThreats():
     """
     Analyzes system threats using the SIEM(Wazuh) data, generates AI insights on the basis of that data and performs actions if approved.
+    This function is a generator that yields updates for the Gradio UI.
     """
     print("[*] Pulling FortiGate SIEM alerts from Wazuh...")
     WAZUH_URL = checkEnvVariable("WAZUH_URL")
     WAZUH_USER = checkEnvVariable("WAZUH_USER")
     WAZUH_PASS = checkEnvVariable("WAZUH_PASS")
-    
+
     resp = requests.post(
         WAZUH_URL,
         auth=(WAZUH_USER, WAZUH_PASS),
@@ -41,7 +42,8 @@ def analyzeThreats():
     # If no events, don’t bother calling AI
     if not events:
         print("[!] No FortiGate events found, exiting.")
-        exit(0)
+        yield "No FortiGate events found, exiting.", ""
+        return
 
     print("[*] Sending events to AI for analysis...")
     prompt = f"""
@@ -84,10 +86,69 @@ def analyzeThreats():
             "messages": [
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.2
+            "temperature": 0.2,
+            "stream": True
         },
-        verify=False
+        verify=False,
+        stream=True
     )
 
     print("=== AI Response ===\n")
-    print(json.dumps(ai_resp.json(), indent=2))
+
+    full_response = ""
+    # Initial message for the UI
+    yield "Analyzing...", ""
+
+    for line in ai_resp.iter_lines():
+        if line:
+            decoded_line = line.decode('utf-8')
+            if decoded_line.startswith('data:'):
+                data_str = decoded_line[len('data: '):].strip()
+
+                if data_str == '[DONE]':
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    if 'choices' in chunk and len(chunk['choices']) > 0:
+                        choice = chunk['choices'][0]
+                        content_chunk = None
+                        if 'delta' in choice and 'content' in choice['delta']:
+                            content_chunk = choice['delta']['content']
+                        elif 'message' in choice and 'content' in choice['message']:
+                            content_chunk = choice['message']['content']
+                        
+                        if content_chunk:
+                            full_response += content_chunk
+                            # Stream the raw accumulating response to the summary box
+                            yield full_response, ""
+                except json.JSONDecodeError:
+                    print(f"\nError decoding JSON chunk: {data_str}")
+
+    # Now the streaming is done, and full_response has the complete JSON string.
+    print("=== AI Analysis Complete ===\n")
+
+    if not full_response.strip():
+        print("AI response was empty.")
+        yield "AI response was empty.", ""
+        return
+
+    try:
+        # The response might be wrapped in markdown JSON
+        if full_response.strip().startswith("```json"):
+            clean_response = full_response.strip()[7:-4]
+        else:
+            clean_response = full_response
+
+        # Parse the final JSON
+        data = json.loads(clean_response)
+
+        summary = data.get("summary", "No summary provided.")
+        recommendations = data.get("recommendations", [])
+
+        # Yield the final, structured data to the UI
+        yield full_response, json.dumps(recommendations, indent=2)
+
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse the final JSON response: {e}")
+        error_message = f"Error: Could not parse AI response.\n\nRaw response:\n{full_response}"
+        yield error_message, ""
