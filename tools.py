@@ -7,14 +7,14 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURATION ---
 
-LIST_PATH = "etc/lists/poc-allowlist" #relative path on Wazuh manager
+LIST_PATH = "etc/lists/poc-blocklist" #relative path on Wazuh manager
 
 tools_schema = [
     {
         "type": "function",
         "function": {
-            "name": "add_ip_to_allowlist",
-            "description": "Adds the specified IP address to the Wazuh allowlist file and restarts the manager.",
+            "name": "add_ip_to_blocklist",
+            "description": "Adds the specified IP address to the Wazuh blocklist file and restarts the manager.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -24,7 +24,7 @@ tools_schema = [
                     },
                     "reason": {
                         "type": "string",
-                        "description": "The reason for allowing this IP."
+                        "description": "The reason for blocking this IP."
                     }
                 },
                 "required": ["ip_address"]
@@ -43,9 +43,9 @@ def get_token(WAZUH_URL, WAZUH_USER, WAZUH_PASS):
     else:
         raise Exception(f"Authentication Failed: {response.text}")
 
-def add_ip_to_allowlist(ip_address: str, WAZUH_URL: str, WAZUH_USER: str, WAZUH_PASS: str, reason: str="Authorized by AI") -> str:
+def add_ip_to_blocklist(ip_address: str, WAZUH_URL: str, WAZUH_USER: str, WAZUH_PASS: str, reason: str="Authorized by AI") -> str:
     """
-    Adds the specified IP address to the Wazuh allowlist file and restarts the manager.
+    Adds the specified IP address to the Wazuh blocklist file and restarts the manager.
     Args:
         ip_address : The IP address to add.
         WAZUH_URL : The URL of the Wazuh manager.
@@ -55,7 +55,7 @@ def add_ip_to_allowlist(ip_address: str, WAZUH_URL: str, WAZUH_USER: str, WAZUH_
     Returns:
         str: A message indicating the success or failure of the operation.
     """
-    yield f"Starting process to add {ip_address} to allowlist..."
+    yield f"Starting process to add {ip_address} to blocklist..."
     token = get_token(WAZUH_URL, WAZUH_USER, WAZUH_PASS)
     headers = {
         'Authorization': f'Bearer {token}',
@@ -70,7 +70,7 @@ def add_ip_to_allowlist(ip_address: str, WAZUH_URL: str, WAZUH_USER: str, WAZUH_
     # query params: path to file, overwrite=true
     upload_url = f"{WAZUH_URL}/manager/files?path={LIST_PATH}&overwrite=true"
     
-    print(f"Adding {ip_address} to allowlist...")
+    print(f"Adding {ip_address} to blocklist...")
     upload_response = requests.put(upload_url, headers=headers, data=file_content, verify=False)
     
     if upload_response.status_code != 200:
