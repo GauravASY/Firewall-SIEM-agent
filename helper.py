@@ -1,5 +1,5 @@
 import requests, os, json
-from tools import tools_schema
+from tools import tools_schema, add_ip_to_blocklist
 
 
 def checkEnvVariable(var_name):
@@ -153,10 +153,14 @@ def analyzeThreats():
     
         ## Passing the Analysis to the AI model for performing actions on the Wazuh Manager if needed
         action_prompt = f"""
-        Here is your analysis of FortiGate VPN logs from Wazuh SIEM:{full_response}.
-        Based on this analysis, determine if any automated actions are required to mitigate threats and perform them using the available tools.
+            Here is the threat analysis:
+            {full_response}
 
-        """
+            MANDATORY INSTRUCTION:
+            - If high-risk IPs are identified in the analysis, you MUST use the `add_ip_to_blocklist` tool to block them immediately. 
+            - Call the function once for each IP that needs blocking
+            - Do NOT just describe what to do - actually call the functions
+            """
         yield full_response + "\n ### Checking if I have required tools to perform actions...", json.dumps(recommendations, indent=2)
         ai_action_resp = requests.post(
             LMAAS_URL,
@@ -167,9 +171,10 @@ def analyzeThreats():
             json={
                 "model": MODEL,
                 "messages": [
+                    {"role": "system", "content": "You are a Security Enforcement Agent. Your job is to perform actions based on threat analysis report using the available tools."},
                     {"role": "user", "content": action_prompt}
                 ],
-                "temperature": 0.2,
+                "temperature": 0.1,
                 "tools": tools_schema,
                 "tool_choice": "auto"
             },
@@ -185,7 +190,7 @@ def analyzeThreats():
         if msg_2.get('tool_calls'):
             print("Using tools to perform actions...\n")
             for tool in msg_2['tool_calls']:
-                if tool['function']['name'] == "add_ip_to_allowlist":
+                if tool['function']['name'] == "add_ip_to_blocklist":
                     
                     # 1. Parse Args
                     args = json.loads(tool['function']['arguments'])
@@ -194,7 +199,7 @@ def analyzeThreats():
                     yield full_response + f"\n\n[Action] Initiating Block for {target_ip}...", ""
 
                     # 2. THE BRIDGE (Inject Credentials)
-                    action_gen = add_ip_to_allowlist(
+                    action_gen = add_ip_to_blocklist(
                         ip_address=target_ip,
                         reason=args.get('reason'),
                         WAZUH_URL=WAZUH_URL,
@@ -212,7 +217,7 @@ def analyzeThreats():
                         yield full_response + tool_output_log, ""
     
         else:
-            yield full_response.strip()[:-3] + "### No automated actions required", json.dumps(recommendations, indent=2)
+            yield full_response.strip()[:-3] + "\n ### No automated actions required", json.dumps(recommendations, indent=2)
     
 
     except json.JSONDecodeError as e:
