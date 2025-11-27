@@ -1,4 +1,5 @@
 import requests, os, json
+from tools import tools_schema
 
 
 def checkEnvVariable(var_name):
@@ -14,7 +15,7 @@ def analyzeThreats():
     Analyzes system threats using the SIEM(Wazuh) data, generates AI insights on the basis of that data and performs actions if approved.
     This function is a generator that yields updates for the Gradio UI.
     """
-    print("[*] Pulling FortiGate SIEM alerts from Wazuh...")
+    yield " ### [*] Pulling FortiGate SIEM alerts from Wazuh...", ""
     WAZUH_URL = checkEnvVariable("WAZUH_URL")
     WAZUH_USER = checkEnvVariable("WAZUH_USER")
     WAZUH_PASS = checkEnvVariable("WAZUH_PASS")
@@ -37,7 +38,7 @@ def analyzeThreats():
     hits = resp.json().get("hits", {}).get("hits", [])
     events = [hit["_source"] for hit in hits]
 
-    print(f"[+] Retrieved {len(events)} events from Wazuh SIEM")
+    yield f"### [*] Pulling FortiGate SIEM alerts from Wazuh...\n ### [*] Retrieved {len(events)} events from Wazuh SIEM", ""
 
     # If no events, don’t bother calling AI
     if not events:
@@ -45,7 +46,7 @@ def analyzeThreats():
         yield "No FortiGate events found, exiting.", ""
         return
 
-    print("[*] Sending events to AI for analysis...")
+    yield f"### [*] Pulling FortiGate SIEM alerts from Wazuh...\n ### [*] Retrieved {len(events)} events from Wazuh SIEM\n ### [*] Sending events to AI for analysis...", ""
     prompt = f"""
     You are an AI SOC Analyst.
 
@@ -73,7 +74,8 @@ def analyzeThreats():
     LMAAS_KEY = checkEnvVariable("LMAAS_KEY")
     MODEL = checkEnvVariable("MODEL")
 
-    print("[*] Sending logs to LiteMaaS AI model for analysis...\n")
+    yield f"### [*] Pulling FortiGate SIEM alerts from Wazuh...\n ### [*] Retrieved {len(events)} events from Wazuh SIEM\n ### [*] Sending events to AI for analysis...", ""
+
 
     ai_resp = requests.post(
         LMAAS_URL,
@@ -97,7 +99,7 @@ def analyzeThreats():
 
     full_response = ""
     # Initial message for the UI
-    yield "Analyzing...", ""
+    yield f"### [*] Pulling FortiGate SIEM alerts from Wazuh...\n ### [*] Retrieved {len(events)} events from Wazuh SIEM\n ### [*] Sending events to AI for analysis...\n ### [*] Analysing....", ""
 
     for line in ai_resp.iter_lines():
         if line:
@@ -124,6 +126,7 @@ def analyzeThreats():
                 except json.JSONDecodeError:
                     print(f"\nError decoding JSON chunk: {data_str}")
 
+
     # Now the streaming is done, and full_response has the complete JSON string.
     print("=== AI Analysis Complete ===\n")
 
@@ -147,6 +150,70 @@ def analyzeThreats():
 
         # Yield the final, structured data to the UI
         yield full_response, json.dumps(recommendations, indent=2)
+    
+        ## Passing the Analysis to the AI model for performing actions on the Wazuh Manager if needed
+        action_prompt = f"""
+        Here is your analysis of FortiGate VPN logs from Wazuh SIEM:{full_response}.
+        Based on this analysis, determine if any automated actions are required to mitigate threats and perform them using the available tools.
+
+        """
+        yield full_response + "\n ### Checking if I have required tools to perform actions...", json.dumps(recommendations, indent=2)
+        ai_action_resp = requests.post(
+            LMAAS_URL,
+            headers={
+                "Authorization": f"Bearer {LMAAS_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": MODEL,
+                "messages": [
+                    {"role": "user", "content": action_prompt}
+                ],
+                "temperature": 0.2,
+                "tools": tools_schema,
+                "tool_choice": "auto"
+            },
+            verify=False,
+            stream=False
+      )
+
+
+    # Parse the response
+        response_data = ai_action_resp.json()
+        msg_2 = response_data['choices'][0]['message']
+        print(f"=============AI Action Response Message============================\n\n {msg_2}")
+        if msg_2.get('tool_calls'):
+            print("Using tools to perform actions...\n")
+            for tool in msg_2['tool_calls']:
+                if tool['function']['name'] == "add_ip_to_allowlist":
+                    
+                    # 1. Parse Args
+                    args = json.loads(tool['function']['arguments'])
+                    target_ip = args.get('ip_address')
+                    
+                    yield full_response + f"\n\n[Action] Initiating Block for {target_ip}...", ""
+
+                    # 2. THE BRIDGE (Inject Credentials)
+                    action_gen = add_ip_to_allowlist(
+                        ip_address=target_ip,
+                        reason=args.get('reason'),
+                        WAZUH_URL=WAZUH_URL,
+                        WAZUH_USER=WAZUH_USER,
+                        WAZUH_PASS=WAZUH_PASS
+                    )
+
+                    # 3. Stream the Tool's progress to UI
+                    # The tool yields "Updating file...", then "Restarting..."
+                    # We append this to the UI stream
+                    tool_output_log = ""
+                    for status in action_gen:
+                        tool_output_log = f"\n> {status}"
+                        # We keep the original text and append the tool status
+                        yield full_response + tool_output_log, ""
+    
+        else:
+            yield full_response.strip()[:-3] + "### No automated actions required", json.dumps(recommendations, indent=2)
+    
 
     except json.JSONDecodeError as e:
         print(f"Failed to parse the final JSON response: {e}")
