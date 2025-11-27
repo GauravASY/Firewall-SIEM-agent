@@ -6,12 +6,34 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURATION ---
-WAZUH_URL = "https://<YOUR_WAZUH_IP>:55000"
-WAZUH_USER = "wazuh"
-WAZUH_PASS = "wazuh"
-LIST_PATH = "etc/lists/poc-allowlist"  # Relative path in Wazuh manager
 
-def get_token():
+LIST_PATH = "etc/lists/poc-allowlist" #relative path on Wazuh manager
+
+tools_schema = [
+    {
+        "type": "function",
+        "function": {
+            "name": "add_ip_to_allowlist",
+            "description": "Adds the specified IP address to the Wazuh allowlist file and restarts the manager.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ip_address": {
+                        "type": "string",
+                        "description": "The IP address to allow (e.g., 192.168.1.50)."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "The reason for allowing this IP."
+                    }
+                },
+                "required": ["ip_address"]
+            }
+        }
+    }
+] 
+
+def get_token(WAZUH_URL, WAZUH_USER, WAZUH_PASS):
     """Authenticates and returns the JWT token."""
     url = f"{WAZUH_URL}/security/user/authenticate"
     response = requests.get(url, auth=(WAZUH_USER, WAZUH_PASS), verify=False)
@@ -21,13 +43,20 @@ def get_token():
     else:
         raise Exception(f"Authentication Failed: {response.text}")
 
-def add_ip_to_allowlist(ip_address, reason="Authorized by AI"):
+def add_ip_to_allowlist(ip_address: str, WAZUH_URL: str, WAZUH_USER: str, WAZUH_PASS: str, reason: str="Authorized by AI") -> str:
     """
-    1. Reads current list (optional, omitted here for simplicity).
-    2. Overwrites list with new data.
-    3. Restarts Manager.
+    Adds the specified IP address to the Wazuh allowlist file and restarts the manager.
+    Args:
+        ip_address : The IP address to add.
+        WAZUH_URL : The URL of the Wazuh manager.
+        WAZUH_USER : The username for authentication.
+        WAZUH_PASS : The password for authentication.
+        reason : The reason for adding the IP. Defaults to "Authorized by AI".
+    Returns:
+        str: A message indicating the success or failure of the operation.
     """
-    token = get_token()
+    yield f"Starting process to add {ip_address} to allowlist..."
+    token = get_token(WAZUH_URL, WAZUH_USER, WAZUH_PASS)
     headers = {
         'Authorization': f'Bearer {token}',
         'Content-Type': 'application/octet-stream' # Required for file uploads
@@ -45,7 +74,7 @@ def add_ip_to_allowlist(ip_address, reason="Authorized by AI"):
     upload_response = requests.put(upload_url, headers=headers, data=file_content, verify=False)
     
     if upload_response.status_code != 200:
-        return f"Error updating file: {upload_response.text}"
+        yield f"Error updating file: {upload_response.text}"
 
     # STEP 3: RESTART MANAGER
     print("Restarting Wazuh Manager to apply changes...")
@@ -53,11 +82,6 @@ def add_ip_to_allowlist(ip_address, reason="Authorized by AI"):
     restart_response = requests.put(restart_url, headers=headers, verify=False)
 
     if restart_response.status_code == 200:
-        return "Success: IP added and Manager restarting."
+        yield "Success: IP added and Manager restarting."
     else:
-        return f"File updated, but restart failed: {restart_response.text}"
-
-# --- EXECUTION ---
-# This is how your Agent would call the tool
-result = add_ip_to_allowlist("10.0.0.50", reason="False Positive - Dev Server")
-print(result)
+        yield f"File updated, but restart failed: {restart_response.text}"
