@@ -28,7 +28,7 @@ def main():
     #app-header .logos { display:flex; align-items:center; gap:12px; }
     #app-header img { height:70px; width:auto; object-fit:contain; display:block; }
     #app-title { flex:4; text-align:center; font-weight:700; font-size:20px; color:#1f3a5f; }
-    #summary-box { color:black !important; background:#27272a !important; border:1px solid #eee; border-radius:12px; padding:14px 16px; line-height:1.55; max-height:460px; overflow:auto; }
+    #summary-box { color:black !important; background:#27272a !important; border:1px solid #eee; border-radius:12px; padding:14px 16px; line-height:1.55}
     .gr-code { border-radius:12px !important; border:1px solid #e5e7eb !important; }
     .gr-code>pre, .gr-code code, #summary-box pre, #summary-box code {
       background:#ffffff !important; color:#111111 !important; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
