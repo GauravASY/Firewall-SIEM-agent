@@ -187,16 +187,19 @@ def analyzeThreats():
         response_data = ai_action_resp.json()
         msg_2 = response_data['choices'][0]['message']
         print(f"=============AI Action Response Message============================\n\n {msg_2}")
-        if msg_2.get('tool_calls'):
+        if msg_2.get('content'):
             print("Using tools to perform actions...\n")
-            for tool in msg_2['tool_calls']:
-                if tool['function']['name'] == "add_ip_to_blocklist":
+            content_str = msg_2['content']
+            content_data = json.loads(content_str)
+            for tool in content_data:
+                print(f"Tool inside loop : {tool}")
+                if tool['name'] == "add_ip_to_blocklist":
                     
                     # 1. Parse Args
-                    args = json.loads(tool['function']['arguments'])
+                    args = tool['arguments']
                     target_ip = args.get('ip_address')
                     
-                    yield full_response + f"\n\n[Action] Initiating Block for {target_ip}...", ""
+                    yield full_response + f"\n[Action] Initiating Block for {target_ip}...", ""
 
                     # 2. THE BRIDGE (Inject Credentials)
                     action_gen = add_ip_to_blocklist(
@@ -217,7 +220,7 @@ def analyzeThreats():
                         yield full_response + tool_output_log, ""
     
         else:
-            yield full_response.strip()[:-3] + "\n ### No automated actions required", json.dumps(recommendations, indent=2)
+            yield full_response + "\n ### No automated actions required", json.dumps(recommendations, indent=2)
     
 
     except json.JSONDecodeError as e:
