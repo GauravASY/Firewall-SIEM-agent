@@ -1,5 +1,6 @@
 import requests, os, json
 from tools import tools_schema, add_ip_to_blocklist, restart_wazuh_manager
+import time
 
 
 def checkEnvVariable(var_name):
@@ -221,9 +222,10 @@ def analyzeThreats(size=20, query_string="*"):
                     tool_output_log = ""
                     for status in action_gen:
                         print(f"Tool Status: {status}")
-                        tool_output_log = f">{status}"
+                        tool_output_log = f"\n> {status}"
                         # We keep the original text and append the tool status
                         yield full_response + tool_output_log, json.dumps(recommendations, indent=2)
+                        time.sleep(1)
                 elif tool['name'] == "restart_wazuh_manager":
                     action_gen = restart_wazuh_manager(
                         WAZUH_API_URL=WAZUH_API_URL,
@@ -232,7 +234,7 @@ def analyzeThreats(size=20, query_string="*"):
                     )
                     tool_output_log = ""
                     for status in action_gen:
-                        tool_output_log = f"> {status}"
+                        tool_output_log = f"\n> {status}"
                         yield full_response + tool_output_log, json.dumps(recommendations, indent=2)
         else:
             yield full_response + "\n ### No automated actions required", json.dumps(recommendations, indent=2)
