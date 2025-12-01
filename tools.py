@@ -108,6 +108,6 @@ def restart_wazuh_manager(WAZUH_API_URL: str, WAZUH_API_USER: str, WAZUH_API_PAS
     restart_response = requests.put(restart_url, headers=headers, verify=False)
 
     if restart_response.status_code == 200:
-        yield "###Success: Manager restarting."
+        yield "### Success: Manager restarting."
     else:
         yield f"### Manager restart failed: {restart_response.text}"
