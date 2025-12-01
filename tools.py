@@ -7,7 +7,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURATION ---
 
-LIST_PATH = "etc/lists/poc-blocklist" #relative path on Wazuh manager
+LIST_PATH = "lists/files/poc-blocklist" #relative path on Wazuh manager
 
 tools_schema = [
     {
@@ -50,7 +50,6 @@ def get_token(WAZUH_API_URL, WAZUH_API_USER, WAZUH_API_PASS):
 
     url = f"{WAZUH_API_URL}/security/user/authenticate"
     response = requests.post(url, auth=(WAZUH_API_USER, WAZUH_API_PASS), verify=False)
-    print(f"Authentication Response: {response.status_code} - {response.text}")
     if response.status_code == 200:
         return response.json()['data']['token']
     else:
@@ -68,7 +67,7 @@ def add_ip_to_blocklist(ip_address: str, WAZUH_API_URL: str, WAZUH_API_USER: str
     Returns:
         str: A message indicating the success or failure of the operation.
     """
-    yield f"### Starting process to add {ip_address} to blocklist...\n"
+
     token = get_token(WAZUH_API_URL, WAZUH_API_USER, WAZUH_API_PASS)
     headers = {
         'Authorization': f'Bearer {token}',
@@ -81,16 +80,16 @@ def add_ip_to_blocklist(ip_address: str, WAZUH_API_URL: str, WAZUH_API_USER: str
 
     # STEP 2: UPDATE THE FILE
     # query params: path to file, overwrite=true
-    upload_url = f"{WAZUH_API_URL}/manager/files?path={LIST_PATH}&overwrite=true"
+    upload_url = f"{WAZUH_API_URL}/{LIST_PATH}?overwrite=true"
     
     print(f"Adding {ip_address} to blocklist...")
     upload_response = requests.put(upload_url, headers=headers, data=file_content, verify=False)
     
     if upload_response.status_code != 200:
-        print("-------------------\n" + upload_response.text + "\n-------------------")
         yield f"Error updating file: {upload_response.text}"
     else:
-        yield f"Success: {ip_address} added to blocklist."
+        print("-------------------\n" + upload_response.text + "\n-------------------")
+        yield f"### Success: {ip_address} added to blocklist."
         
 
 def restart_wazuh_manager(WAZUH_API_URL: str, WAZUH_API_USER: str, WAZUH_API_PASS: str) -> str:
@@ -109,6 +108,6 @@ def restart_wazuh_manager(WAZUH_API_URL: str, WAZUH_API_USER: str, WAZUH_API_PAS
     restart_response = requests.put(restart_url, headers=headers, verify=False)
 
     if restart_response.status_code == 200:
-        yield "Success: Manager restarting."
+        yield "###Success: Manager restarting."
     else:
-        yield f"Manager restart failed: {restart_response.text}"
+        yield f"### Manager restart failed: {restart_response.text}"
