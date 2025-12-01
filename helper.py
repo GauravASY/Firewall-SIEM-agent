@@ -10,7 +10,7 @@ def checkEnvVariable(var_name):
     return env_var
 
 
-def analyzeThreats():
+def analyzeThreats(size=20, query_string="*"):
     """
     Analyzes system threats using the SIEM(Wazuh) data, generates AI insights on the basis of that data and performs actions if approved.
     This function is a generator that yields updates for the Gradio UI.
@@ -23,18 +23,23 @@ def analyzeThreats():
     WAZUH_API_PASS = checkEnvVariable("WAZUH_API_PASS")
     WAZUH_API_URL = checkEnvVariable("WAZUH_API_URL")
 
+    body = {
+        "size": int(size),
+        "sort": [
+            {"@timestamp": {"order": "desc"}}
+        ],
+        "query": {
+            "query_string": {
+                "query": query_string or "*"
+            }
+        }
+    }
+
     resp = requests.post(
         WAZUH_URL,
         auth=(WAZUH_USER, WAZUH_PASS),
         headers={"Content-Type": "application/json"},
-        json={
-            "query": {
-                "match": {
-                    "rule.groups": "fortigate"
-                }
-            },
-            "size": 40
-        },
+        json=body,
         verify=False
     )
 
@@ -98,7 +103,7 @@ def analyzeThreats():
         stream=True
     )
 
-    print("=== AI Response ===\n")
+    print("=== AI Analysis Response ===\n")
 
     full_response = ""
     # Initial message for the UI
@@ -129,9 +134,6 @@ def analyzeThreats():
                 except json.JSONDecodeError:
                     print(f"\nError decoding JSON chunk: {data_str}")
 
-
-    # Now the streaming is done, and full_response has the complete JSON string.
-    print("=== AI Analysis Complete ===\n")
 
     if not full_response.strip():
         print("AI response was empty.")
@@ -192,7 +194,6 @@ def analyzeThreats():
         msg_2 = response_data['choices'][0]['message']
         print(f"=============AI Action Response Message============================\n\n {msg_2}")
         if msg_2.get('content'):
-            print("Using tools to perform actions...\n")
             content_str = msg_2['content']
             content_data = json.loads(content_str)
             for tool in content_data:
@@ -203,7 +204,7 @@ def analyzeThreats():
                     args = tool['arguments']
                     target_ip = args.get('ip_address')
                     
-                    yield full_response + f"\n[Action] Initiating Block for {target_ip}...", ""
+                    yield full_response + f"\n[Action] Initiating Block for {target_ip}...", json.dumps(recommendations, indent=2)
 
                     # 2. THE BRIDGE (Inject Credentials)
                     action_gen = add_ip_to_blocklist(
@@ -215,13 +216,14 @@ def analyzeThreats():
                     )
 
                     # 3. Stream the Tool's progress to UI
-                    # The tool yields "Updating file...", then "Restarting..."
+                    # The tool yields "Updating file..."
                     # We append this to the UI stream
                     tool_output_log = ""
                     for status in action_gen:
-                        tool_output_log = f"\n> {status}"
+                        print(f"Tool Status: {status}")
+                        tool_output_log = f">{status}"
                         # We keep the original text and append the tool status
-                        yield full_response + tool_output_log, ""
+                        yield full_response + tool_output_log, json.dumps(recommendations, indent=2)
                 elif tool['name'] == "restart_wazuh_manager":
                     action_gen = restart_wazuh_manager(
                         WAZUH_API_URL=WAZUH_API_URL,
@@ -230,8 +232,8 @@ def analyzeThreats():
                     )
                     tool_output_log = ""
                     for status in action_gen:
-                        tool_output_log = f"\n> {status}"
-                        yield full_response + tool_output_log, ""
+                        tool_output_log = f"> {status}"
+                        yield full_response + tool_output_log, json.dumps(recommendations, indent=2)
         else:
             yield full_response + "\n ### No automated actions required", json.dumps(recommendations, indent=2)
     
