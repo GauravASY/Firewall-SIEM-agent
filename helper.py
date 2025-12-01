@@ -1,5 +1,5 @@
 import requests, os, json
-from tools import tools_schema, add_ip_to_blocklist
+from tools import tools_schema, add_ip_to_blocklist, restart_wazuh_manager
 
 
 def checkEnvVariable(var_name):
@@ -19,6 +19,9 @@ def analyzeThreats():
     WAZUH_URL = checkEnvVariable("WAZUH_URL")
     WAZUH_USER = checkEnvVariable("WAZUH_USER")
     WAZUH_PASS = checkEnvVariable("WAZUH_PASS")
+    WAZUH_API_USER = checkEnvVariable("WAZUH_API_USER")
+    WAZUH_API_PASS = checkEnvVariable("WAZUH_API_PASS")
+    WAZUH_API_URL = checkEnvVariable("WAZUH_API_URL")
 
     resp = requests.post(
         WAZUH_URL,
@@ -159,6 +162,7 @@ def analyzeThreats():
             MANDATORY INSTRUCTION:
             - If high-risk IPs are identified in the analysis, you MUST use the `add_ip_to_blocklist` tool to block them immediately. 
             - Call the function once for each IP that needs blocking
+            - Once all the high-risk IPs are blocked, use the `restart_wazuh_manager` tool to restart the Wazuh manager.
             - Do NOT just describe what to do - actually call the functions
             """
         yield full_response + "\n ### Checking if I have required tools to perform actions...", json.dumps(recommendations, indent=2)
@@ -205,9 +209,9 @@ def analyzeThreats():
                     action_gen = add_ip_to_blocklist(
                         ip_address=target_ip,
                         reason=args.get('reason'),
-                        WAZUH_URL=WAZUH_URL,
-                        WAZUH_USER=WAZUH_USER,
-                        WAZUH_PASS=WAZUH_PASS
+                        WAZUH_API_URL=WAZUH_API_URL,
+                        WAZUH_API_USER=WAZUH_API_USER,
+                        WAZUH_API_PASS=WAZUH_API_PASS
                     )
 
                     # 3. Stream the Tool's progress to UI
@@ -218,7 +222,16 @@ def analyzeThreats():
                         tool_output_log = f"\n> {status}"
                         # We keep the original text and append the tool status
                         yield full_response + tool_output_log, ""
-    
+                elif tool['name'] == "restart_wazuh_manager":
+                    action_gen = restart_wazuh_manager(
+                        WAZUH_API_URL=WAZUH_API_URL,
+                        WAZUH_API_USER=WAZUH_API_USER,
+                        WAZUH_API_PASS=WAZUH_API_PASS
+                    )
+                    tool_output_log = ""
+                    for status in action_gen:
+                        tool_output_log = f"\n> {status}"
+                        yield full_response + tool_output_log, ""
         else:
             yield full_response + "\n ### No automated actions required", json.dumps(recommendations, indent=2)
     
