@@ -57,27 +57,31 @@ def analyzeThreats(size=20, query_string="*"):
 
     yield f"### [*] Pulling FortiGate SIEM alerts from Wazuh...\n ### [*] Retrieved {len(events)} events from Wazuh SIEM\n ### [*] Sending events to AI for analysis...", ""
     prompt = f"""
-    You are an AI SOC Analyst.
+        You are an AI SOC Analyst.
 
-    Here are FortiGate firewall VPN logs from a SIEM (Wazuh):
+        Here are FortiGate firewall VPN logs from a SIEM (Wazuh):
 
-    {json.dumps(events, indent=2)}
+        {json.dumps(events, indent=2)}
 
-    Your tasks:
-    1. Identify attack types (brute force, scanner, credential spraying, etc.)
-    2. Identify top attacker IPs and usernames.
-    3. Check for SSL alerts, IPsec tunnel failures, suspicious patterns.
-    4. Provide a risk score from 1 to 10.
-    5. Provide recommended next actions (clear and actionable).
-    6. Provide a human-readable summary for SOC team.
+        Your tasks:
+        1. Identify attack types (brute force, scanner, credential spraying, etc.)
+        2. Identify top attacker IPs.
+        3. Check for SSL alerts, IPsec tunnel failures, suspicious patterns.
+        4. Provide a severity from "low" | "medium" | "high" | "critical"
+        5. Provide recommended next actions (clear and actionable). Recommendations should be a list of JSON objects with the following keys:
+            - type: "firewall_active_response" | "wazuh_block_ip" | "notify" | "firewall_block_ip"
+            - target: "firewall" | "wazuh" | "other"
+            - ip: "<offending IP if relevant, else empty string>"
+            - reason: "short one-line reason (what is the risk and why)"
+            - details: "2–4 bullet-like lines with step-by-step recommended actions (which system, what to do, what to verify)."
+        6. Provide a human-readable DETAILED multi-paragraph analysis. Start with a short overview, then include bullet-style lines for attack types, top source IPs, affected destinations, time pattern, OWASP/MITRE mapping, and business impact.
 
-    Respond in JSON only with keys:
-    - summary
-    - top_attackers
-    - targeted_users
-    - attack_type
-    - risk_score
-    - recommendations
+        Respond in JSON only with keys:
+        - summary
+        - severity
+        - top_attackers
+        - attack_type
+        - recommendations 
     """
     LMAAS_URL = checkEnvVariable("LMAAS_URL")
     LMAAS_KEY = checkEnvVariable("LMAAS_KEY")
@@ -153,7 +157,7 @@ def analyzeThreats(size=20, query_string="*"):
         recommendations = data.get("recommendations", [])
 
         # Yield the final, structured data to the UI
-        yield full_response, json.dumps(recommendations, indent=2)
+        yield full_response + "\n" + "\n\n ### Waiting for approval....", json.dumps(recommendations, indent=2)
 
     except json.JSONDecodeError as e:
         print(f"Failed to parse the final JSON response: {e}")
@@ -165,9 +169,6 @@ def execute_remediation(full_response, approve):
     """
     Executes the remediation actions if approved.
     """
-    WAZUH_URL = checkEnvVariable("WAZUH_URL")
-    WAZUH_USER = checkEnvVariable("WAZUH_USER")
-    WAZUH_PASS = checkEnvVariable("WAZUH_PASS")
     WAZUH_API_USER = checkEnvVariable("WAZUH_API_USER")
     WAZUH_API_PASS = checkEnvVariable("WAZUH_API_PASS")
     WAZUH_API_URL = checkEnvVariable("WAZUH_API_URL")
@@ -175,7 +176,7 @@ def execute_remediation(full_response, approve):
     LMAAS_KEY = checkEnvVariable("LMAAS_KEY")
     MODEL = checkEnvVariable("MODEL")
 
-    if not full_response:
+    if "Waiting for analysis..." in full_response or "No analysis data found. Please run analysis first." in full_response:
         yield "### No analysis data found. Please run analysis first.", ""
         return
 
@@ -231,11 +232,13 @@ def execute_remediation(full_response, approve):
             content_str = msg_2['content']
             try:
                 content_data = json.loads(content_str)
+                content_data_json = json.dumps(content_data, indent=2)
             except json.JSONDecodeError:
                  yield full_response + f"\n ### AI Response (Not JSON): {content_str}", ""
                  return
 
             for tool in content_data:
+                print(f"=============Tool Response Message============================\n\n {tool}")
                 if tool['name'] == "add_ip_to_blocklist":
                     args = tool['arguments']
                     target_ip = args.get('ip_address')
@@ -253,7 +256,7 @@ def execute_remediation(full_response, approve):
                     tool_output_log = ""
                     for status in action_gen:
                         tool_output_log = f"\n> {status}"
-                        yield full_response + tool_output_log, ""
+                        yield full_response + tool_output_log,  content_data_json
                         time.sleep(1)
                 elif tool['name'] == "restart_wazuh_manager":
                     action_gen = restart_wazuh_manager(
@@ -264,7 +267,7 @@ def execute_remediation(full_response, approve):
                     tool_output_log = ""
                     for status in action_gen:
                         tool_output_log = f"\n> {status}"
-                        yield full_response + tool_output_log, ""
+                        yield full_response + tool_output_log, content_data_json
         else:
             yield full_response + "\n ### No automated actions required", ""
 
