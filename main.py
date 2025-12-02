@@ -174,6 +174,7 @@ def main():
                     with gr.Tab("Approved Actions"):
                         # Your original output placeholder
                         approved_code = gr.Code(label="Approved Actions (JSON)", language="json")
+                    
 
                 # Your original State variables
                 summary_state = gr.State("")
@@ -191,7 +192,7 @@ def main():
         execute_btn.click(
             execute_remediation,
             inputs=[summary_md, approve],
-            outputs=[summary_md, approved_code]
+            outputs=[summary_md, approved_code ]
         )
 
     demo.launch()
