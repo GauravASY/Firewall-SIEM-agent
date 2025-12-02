@@ -4,7 +4,7 @@ import urllib3
 import json
 import gradio as gr
 # [CHANGE] Keeping your original backend import
-from helper import analyzeThreats
+from helper import analyzeThreats, execute_remediation
 
 # Unset the SSL_CERT_FILE environment variable if it's set
 if "SSL_CERT_FILE" in os.environ:
@@ -157,16 +157,12 @@ def main():
                 
                 # [CHANGE] Button styled via CSS to match Target UI
                 analyze_btn = gr.Button("Analyze System Threats", variant="primary")
+                execute_btn = gr.Button("Execute Actions", variant="secondary")
 
             # [CHANGE] Right Column: Intelligence Board
             with gr.Column(scale=2):
                 gr.Markdown("### 🧠 AI Analyst Insights")
                 
-                # [CHANGE] Visual Banner to match Target UI look (Static placeholder)
-                severity_banner = gr.HTML(
-                value="",
-                elem_id="severity_banner",
-            )
 
                 # [CHANGE] Summary Box with specific ID for "Midnight Blue" styling
                 summary_md = gr.Markdown(value="Waiting for analysis...", label="Summary", elem_id="ai_summary_md")
@@ -190,6 +186,12 @@ def main():
             inputs=[size, query_string],
             outputs=[summary_md, actions_code],
             api_name="analyse",
+        )
+
+        execute_btn.click(
+            execute_remediation,
+            inputs=[summary_md, approve],
+            outputs=[summary_md, approved_code]
         )
 
     demo.launch()

@@ -154,19 +154,51 @@ def analyzeThreats(size=20, query_string="*"):
 
         # Yield the final, structured data to the UI
         yield full_response, json.dumps(recommendations, indent=2)
-    
-        ## Passing the Analysis to the AI model for performing actions on the Wazuh Manager if needed
-        action_prompt = f"""
-            Here is the threat analysis:
-            {full_response}
 
-            MANDATORY INSTRUCTION:
-            - If high-risk IPs are identified in the analysis, you MUST use the `add_ip_to_blocklist` tool to block them immediately. 
-            - Call the function once for each IP that needs blocking
-            - Once all the high-risk IPs are blocked, use the `restart_wazuh_manager` tool to restart the Wazuh manager.
-            - Do NOT just describe what to do - actually call the functions
-            """
-        yield full_response + "\n ### Checking if I have required tools to perform actions...", json.dumps(recommendations, indent=2)
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse the final JSON response: {e}")
+        error_message = f"Error: Could not parse AI response.\n\nRaw response:\n{full_response}"
+        yield error_message, ""
+
+
+def execute_remediation(full_response, approve):
+    """
+    Executes the remediation actions if approved.
+    """
+    WAZUH_URL = checkEnvVariable("WAZUH_URL")
+    WAZUH_USER = checkEnvVariable("WAZUH_USER")
+    WAZUH_PASS = checkEnvVariable("WAZUH_PASS")
+    WAZUH_API_USER = checkEnvVariable("WAZUH_API_USER")
+    WAZUH_API_PASS = checkEnvVariable("WAZUH_API_PASS")
+    WAZUH_API_URL = checkEnvVariable("WAZUH_API_URL")
+    LMAAS_URL = checkEnvVariable("LMAAS_URL")
+    LMAAS_KEY = checkEnvVariable("LMAAS_KEY")
+    MODEL = checkEnvVariable("MODEL")
+
+    if not full_response:
+        yield "### No analysis data found. Please run analysis first.", ""
+        return
+
+    if not approve or approve.strip().upper() != 'Y':
+        yield full_response + "\n\n### Approval not granted (Type 'Y' to approve). Actions aborted.", ""
+        return
+
+    yield full_response + "\n\n### Approval granted. Initiating remediation actions...", ""
+
+    action_prompt = f"""
+        Here is the threat analysis:
+        {full_response}
+
+        MANDATORY INSTRUCTION:
+        - If high-risk IPs are identified in the analysis, you MUST use the `add_ip_to_blocklist` tool to block them immediately. 
+        - Call the function once for each IP that needs blocking
+        - Once all the high-risk IPs are blocked, use the `restart_wazuh_manager` tool to restart the Wazuh manager.
+        - Do NOT just describe what to do - actually call the functions
+        """
+    
+    yield full_response + "\n ### Checking if I have required tools to perform actions...", ""
+    
+    try:
         ai_action_resp = requests.post(
             LMAAS_URL,
             headers={
@@ -185,27 +217,31 @@ def analyzeThreats(size=20, query_string="*"):
             },
             verify=False,
             stream=False
-      )
+        )
 
-
-    # Parse the response
         response_data = ai_action_resp.json()
+        if 'choices' not in response_data:
+             yield full_response + f"\n ### Error from AI: {response_data}", ""
+             return
+
         msg_2 = response_data['choices'][0]['message']
         print(f"=============AI Action Response Message============================\n\n {msg_2}")
+        
         if msg_2.get('content'):
             content_str = msg_2['content']
-            content_data = json.loads(content_str)
+            try:
+                content_data = json.loads(content_str)
+            except json.JSONDecodeError:
+                 yield full_response + f"\n ### AI Response (Not JSON): {content_str}", ""
+                 return
+
             for tool in content_data:
-             #   print(f"Tool inside loop : {tool}")
                 if tool['name'] == "add_ip_to_blocklist":
-                    
-                    # 1. Parse Args
                     args = tool['arguments']
                     target_ip = args.get('ip_address')
                     
-                    yield full_response + f"\n[Action] Initiating Block for {target_ip}...", json.dumps(recommendations, indent=2)
+                    yield full_response + f"\n[Action] Initiating Block for {target_ip}...", ""
 
-                    # 2. THE BRIDGE (Inject Credentials)
                     action_gen = add_ip_to_blocklist(
                         ip_address=target_ip,
                         reason=args.get('reason'),
@@ -214,14 +250,10 @@ def analyzeThreats(size=20, query_string="*"):
                         WAZUH_API_PASS=WAZUH_API_PASS
                     )
 
-                    # 3. Stream the Tool's progress to UI
-                    # The tool yields "Updating file..."
-                    # We append this to the UI stream
                     tool_output_log = ""
                     for status in action_gen:
                         tool_output_log = f"\n> {status}"
-                        # We keep the original text and append the tool status
-                        yield full_response + tool_output_log, json.dumps(recommendations, indent=2)
+                        yield full_response + tool_output_log, ""
                         time.sleep(1)
                 elif tool['name'] == "restart_wazuh_manager":
                     action_gen = restart_wazuh_manager(
@@ -232,12 +264,9 @@ def analyzeThreats(size=20, query_string="*"):
                     tool_output_log = ""
                     for status in action_gen:
                         tool_output_log = f"\n> {status}"
-                        yield full_response + tool_output_log, json.dumps(recommendations, indent=2)
+                        yield full_response + tool_output_log, ""
         else:
-            yield full_response + "\n ### No automated actions required", json.dumps(recommendations, indent=2)
-    
+            yield full_response + "\n ### No automated actions required", ""
 
-    except json.JSONDecodeError as e:
-        print(f"Failed to parse the final JSON response: {e}")
-        error_message = f"Error: Could not parse AI response.\n\nRaw response:\n{full_response}"
-        yield error_message, ""
+    except Exception as e:
+        yield full_response + f"\n ### Error executing actions: {str(e)}", ""
