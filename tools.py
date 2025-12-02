@@ -14,7 +14,7 @@ tools_schema = [
         "type": "function",
         "function": {
             "name": "add_ip_to_blocklist",
-            "description": "Adds the specified IP address to the Wazuh blocklist file.",
+            "description": "Blocks an IP at Wazuh Manager by adding it to the Wazuh blocklist file thus blocking it at Wazuh Manager level",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -57,7 +57,7 @@ def get_token(WAZUH_API_URL, WAZUH_API_USER, WAZUH_API_PASS):
 
 def add_ip_to_blocklist(ip_address: str, WAZUH_API_URL: str, WAZUH_API_USER: str, WAZUH_API_PASS: str, reason: str="Authorized by AI") -> str:
     """
-    Adds the specified IP address to the Wazuh blocklist file and restarts the manager.
+    Blocks an IP at Wazuh Manager by adding it to the Wazuh blocklist file 
     Args:
         ip_address : The IP address to add.
         WAZUH_API_URL : The URL of the Wazuh manager.
