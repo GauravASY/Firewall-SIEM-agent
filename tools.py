@@ -74,16 +74,45 @@ def add_ip_to_blocklist(ip_address: str, WAZUH_API_URL: str, WAZUH_API_USER: str
         'Content-Type': 'application/octet-stream' # Required for file uploads
     }
 
-    # STEP 1: PREPARE THE DATA
-    # For this POC, we are just writing the new IP to the file.
-    file_content = f"{ip_address}:{reason}\n"
+    # STEP 1: GET EXISTING CONTENT
+    # We need to read the file first to append to it, otherwise we overwrite it.
+    get_url = f"{WAZUH_API_URL}/{LIST_PATH}?raw=true"
+    print(f"Reading existing blocklist from {LIST_PATH}...")
+    
+    try:
+        get_response = requests.get(get_url, headers=headers, verify=False)
+        if get_response.status_code == 200:
+            existing_content = get_response.text
+            print(f"Exisiting Content: \n {existing_content}")
+        elif get_response.status_code == 404:
+            # File might not exist yet, which is fine
+            print("Blocklist file not found, creating new one.")
+            existing_content = ""
+        else:
+            yield f"Error reading existing file: {get_response.text}"
+            return
+    except Exception as e:
+        yield f"Exception reading file: {str(e)}"
+        return
 
-    # STEP 2: UPDATE THE FILE
+    # STEP 2: PREPARE THE DATA
+    if ip_address in existing_content:
+        yield f"### IP {ip_address} is already in the blocklist."
+        return
+
+    # Append the new IP
+    # Ensure there is a newline before adding if the file is not empty and doesn't end with one
+    if existing_content and not existing_content.endswith('\n'):
+        existing_content += "\n"
+        
+    new_content = existing_content + f"{ip_address}:{reason}\n"
+
+    # STEP 3: UPDATE THE FILE
     # query params: path to file, overwrite=true
     upload_url = f"{WAZUH_API_URL}/{LIST_PATH}?overwrite=true"
     
     print(f"Adding {ip_address} to blocklist...")
-    upload_response = requests.put(upload_url, headers=headers, data=file_content, verify=False)
+    upload_response = requests.put(upload_url, headers=headers, data=new_content, verify=False)
     
     if upload_response.status_code != 200:
         yield f"Error updating file: {upload_response.text}"
