@@ -104,8 +104,6 @@ def analyzeThreats(size=20, query_string="*"):
         stream=True
     )
 
-    print("=== AI Analysis Response ===\n")
-
     full_response = ""
     # Initial message for the UI
     yield f"### [*] Pulling FortiGate SIEM alerts from Wazuh...\n ### [*] Retrieved {len(events)} events from Wazuh SIEM\n ### [*] Sending events to AI for analysis...\n ### [*] Analysing....", ""
@@ -198,7 +196,7 @@ def analyzeThreats(size=20, query_string="*"):
             content_str = msg_2['content']
             content_data = json.loads(content_str)
             for tool in content_data:
-                print(f"Tool inside loop : {tool}")
+             #   print(f"Tool inside loop : {tool}")
                 if tool['name'] == "add_ip_to_blocklist":
                     
                     # 1. Parse Args
@@ -221,7 +219,6 @@ def analyzeThreats(size=20, query_string="*"):
                     # We append this to the UI stream
                     tool_output_log = ""
                     for status in action_gen:
-                        print(f"Tool Status: {status}")
                         tool_output_log = f"\n> {status}"
                         # We keep the original text and append the tool status
                         yield full_response + tool_output_log, json.dumps(recommendations, indent=2)
